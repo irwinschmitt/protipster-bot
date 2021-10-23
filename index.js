@@ -43,9 +43,10 @@ const baseURL = "https://www.protipster.com";
     while (true) {
       const pageActiveTips = await page.$$eval(
         ".card.tip-details",
-        (elements) => {
+        (elements, tipster) => {
           const tempPageActiveTips = [];
 
+          // TODO Add only tips without block symbol
           elements.forEach((tipElement) => {
             const isTipElementActive = tipElement.querySelector(
               "[data-track='TipSlip,BetNow']"
@@ -68,11 +69,17 @@ const baseURL = "https://www.protipster.com";
               data[key] = tipElement.querySelector(value).innerText.trim();
             }
 
+            // TODO Empty sports to get all
+            if (!tipster.sports.includes(data.sport)) {
+              return;
+            }
+
             tempPageActiveTips.push(data);
           });
 
           return tempPageActiveTips;
-        }
+        },
+        tipster
       );
 
       userActiveTips = userActiveTips.concat(pageActiveTips);
@@ -97,6 +104,12 @@ const baseURL = "https://www.protipster.com";
   }
 
   console.log("total tips: ", activeTips.length);
+
+  fs.writeFile("bets.json", JSON.stringify(activeTips), (error) => {
+    if (error) {
+      console.log(error);
+    }
+  });
 
   await browser.close();
 })();
