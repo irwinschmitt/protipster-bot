@@ -1,5 +1,7 @@
 const puppeteer = require("puppeteer");
+const moment = require("moment");
 const fs = require("fs");
+const notifier = require("node-notifier");
 
 const tipsters = require("./tipsters.json");
 
@@ -16,100 +18,171 @@ const browserOptions = {
 
 const baseURL = "https://www.protipster.com";
 
-(async function () {
+(async function run() {
   const browser = await puppeteer.launch(browserOptions);
   const page = await browser.newPage();
-  let activeTips = [];
+
+  ownActiveTips = await getTipsterTips(page, { username: "irwsch" }, true);
+
+  let tipstersActiveTips = [];
 
   for (const tipster of tipsters) {
-    const tipsterTipsURL = `${baseURL}/tipster/${tipster.username}/tips`;
-    await page.goto(tipsterTipsURL);
-    await page.waitForTimeout(2000);
+    const tipsterTips = await getTipsterTips(page, tipster);
 
-    const { hasActiveTips, isLastPage } = await page.$eval(
-      ".tipster-picks",
-      ({ innerText }) => ({
-        hasActiveTips: innerText.includes("Active Tips"),
-        isLastPage: innerText.includes("Settled Tips"),
-      })
-    );
-
-    if (!hasActiveTips) {
-      continue;
+    if (Array.isArray(tipsterTips)) {
+      tipstersActiveTips = [...tipstersActiveTips, ...tipsterTips];
     }
+  }
 
-    let userActiveTips = [];
+  const missingTips = await getMissingTips(ownActiveTips, tipstersActiveTips);
 
-    while (true) {
-      const pageActiveTips = await page.$$eval(
-        ".card.tip-details",
-        (elements, tipster) => {
-          const tempPageActiveTips = [];
+  console.log(`\nTipsters have ${tipstersActiveTips.length} active tips.\n`);
+  console.log(`There are ${missingTips.length} missing for you.\n`);
+  console.log("=========\n");
 
-          // TODO Add only tips without block symbol
-          elements.forEach((tipElement) => {
-            const isTipElementActive = tipElement.querySelector(
-              "[data-track='TipSlip,BetNow']"
-            );
+  if (missingTips.length > 0) {
+    notifyMissingTips(missingTips);
+  }
 
-            if (!isTipElementActive) {
-              return;
-            }
+  await saveToJSON("tips/own.json", ownActiveTips);
+  await saveToJSON("tips/tipsters.json", tipstersActiveTips);
+  await saveToJSON("tips/missing.json", missingTips);
 
-            const selectors = {
-              match: ".w-full:nth-of-type(2) > div:nth-of-type(1)",
-              sport: ".w-full:nth-of-type(2) > div:nth-of-type(2) > a",
-              time: ".w-full:nth-of-type(2) > div:nth-of-type(2) > time",
-              bet: ".w-full:nth-of-type(3) > p",
-            };
+  await browser.close();
 
-            const data = {};
+  setTimeout(run, 30 * 1000);
+})();
 
-            for (const [key, value] of Object.entries(selectors)) {
-              data[key] = tipElement.querySelector(value).innerText.trim();
-            }
+async function getTipsterTips(page, tipster, isOwnTips) {
+  const tipsterTipsURL = `${baseURL}/tipster/${tipster.username}/tips`;
 
-            // TODO Empty sports to get all
-            if (!tipster.sports.includes(data.sport)) {
-              return;
-            }
+  await page.goto(tipsterTipsURL, {
+    waitUntil: "load",
+  });
 
-            tempPageActiveTips.push(data);
-          });
+  if (await isActiveTipsEmpty(page)) {
+    return;
+  }
 
-          return tempPageActiveTips;
-        },
-        tipster
-      );
+  let tipsterActiveTips = [];
 
-      userActiveTips = userActiveTips.concat(pageActiveTips);
+  for (let nextPageNumber = 2; nextPageNumber++; ) {
+    const pageActiveTips = await getPageActiveTips(page, tipster);
+    tipsterActiveTips = [...tipsterActiveTips, ...pageActiveTips];
 
-      if (isLastPage) {
-        break;
-      }
-
-      // TODO go to next page
+    if (await isActiveTipsLastPage(page)) {
       break;
     }
 
-    activeTips = activeTips.concat(userActiveTips);
-
-    console.log(
-      "User: ",
-      tipster.username,
-      " has ",
-      userActiveTips.length,
-      " active tips."
-    );
+    await page.goto(`${tipsterTipsURL}/${nextPageNumber}`, {
+      waitUntil: "load",
+    });
   }
 
-  console.log("total tips: ", activeTips.length);
+  printTipsterTips(tipster, tipsterActiveTips, isOwnTips);
 
-  fs.writeFile("bets.json", JSON.stringify(activeTips), (error) => {
+  return tipsterActiveTips;
+}
+
+async function isActiveTipsEmpty(page) {
+  return !(await page.$eval(".tipster-picks", ({ innerText }) =>
+    innerText.includes("Active Tips")
+  ));
+}
+
+async function isActiveTipsLastPage(page) {
+  return await page.$eval(".tipster-picks", ({ innerText }) =>
+    innerText.includes("Settled Tips")
+  );
+}
+
+function printTipsterTips(tipster, tipsterActiveTips, isOwnTips) {
+  if (isOwnTips) {
+    console.log(`You have ${tipsterActiveTips.length} active tips.\n`);
+    return;
+  }
+
+  console.log(
+    `User ${tipster.username} has ${tipsterActiveTips.length} active tips.`
+  );
+}
+
+function sortTipsByDate(activeTips) {
+  return activeTips.sort((a, b) => {
+    return (
+      moment(a.time, "DD-MM-YYYY HH:mm").toDate() -
+      moment(b.time, "DD-MM-YYYY HH:mm").toDate()
+    );
+  });
+}
+
+async function getPageActiveTips(page, tipster) {
+  return await page.$$eval(
+    ".card.tip-details",
+    (elements, tipster) => {
+      const tempPageActiveTips = [];
+
+      // TODO Add only tips without block symbol
+      elements.forEach((tipElement) => {
+        const isTipElementActive = tipElement.querySelector(
+          "[data-track='TipSlip,BetNow']"
+        );
+
+        if (!isTipElementActive) {
+          return;
+        }
+
+        const selectors = {
+          match: ".w-full:nth-of-type(2) > div:nth-of-type(1)",
+          sport: ".w-full:nth-of-type(2) > div:nth-of-type(2) > a",
+          time: ".w-full:nth-of-type(2) > div:nth-of-type(2) > time",
+          bet: ".w-full:nth-of-type(3) > p",
+        };
+
+        const data = {
+          user: tipster.username,
+        };
+
+        for (const [key, value] of Object.entries(selectors)) {
+          data[key] = tipElement.querySelector(value).innerText.trim();
+        }
+
+        if (tipster.sports && !tipster.sports.includes(data.sport)) {
+          return;
+        }
+
+        tempPageActiveTips.push(data);
+      });
+
+      return tempPageActiveTips;
+    },
+    tipster
+  );
+}
+
+function getMissingTips(ownActiveTips, tipstersActiveTips) {
+  return tipstersActiveTips.filter(
+    (tipsterTip) =>
+      !ownActiveTips.some(
+        (ownTip) =>
+          ownTip.match === tipsterTip.match && ownTip.bet === tipsterTip.bet
+      )
+  );
+}
+
+function notifyMissingTips(missingTips) {
+  notifier.notify({
+    title: "Missing tips",
+    message: `There are ${missingTips.length} missing tips.`,
+    sound: true, // Only Notification Center or Windows Toasters
+    wait: true, // Wait with callback, until user action is taken against notification, does not apply to Windows Toasters as they always wait or notify-send as it does not support the wait option
+  });
+}
+
+async function saveToJSON(fileName, tips) {
+  fs.writeFile(fileName, JSON.stringify(tips), (error) => {
     if (error) {
       console.log(error);
     }
   });
-
-  await browser.close();
-})();
+}

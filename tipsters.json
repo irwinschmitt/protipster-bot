@@ -1,11 +1,6 @@
 [
   {
-    "username": "petarc996"
-  },
-  {
-    "username": "betofatsa"
-  },
-  {
-    "username": "chieza"
+    "username": "petarc996",
+    "sports": ["Football", "Basketball"]
   }
 ]
