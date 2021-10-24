@@ -6,13 +6,15 @@ const notifier = require("node-notifier");
 const tipsters = require("./tipsters.json");
 
 const browserOptions = {
+  userDataDir: "./userDataDir",
   headless: false,
   defaultViewport: null,
   ignoreHTTPSErrors: true,
   args: [
+    "--no-sandbox",
     "--disable-setuid-sandbox",
-    "--window-size=960,1080",
-    "--window-position=961,0",
+    "--window-size=1920,1080",
+    "--window-position=1921,0",
   ],
 };
 
@@ -34,23 +36,24 @@ const baseURL = "https://www.protipster.com";
     }
   }
 
-  const missingTips = await getMissingTips(ownActiveTips, tipstersActiveTips);
+  const sortedMissingTips = sortTipsByDate(
+    await getMissingTips(ownActiveTips, tipstersActiveTips)
+  );
 
-  console.log(`\nTipsters have ${tipstersActiveTips.length} active tips.\n`);
-  console.log(`There are ${missingTips.length} missing for you.\n`);
-  console.log("=========\n");
+  console.log(`\nThere are ${tipstersActiveTips.length} tips.`);
+  console.log(`There are ${sortedMissingTips.length} missing for you.\n`);
 
-  if (missingTips.length > 0) {
-    notifyMissingTips(missingTips);
+  if (sortedMissingTips.length > 0) {
+    notifyMissingTips(sortedMissingTips);
   }
 
   await saveToJSON("tips/own.json", ownActiveTips);
   await saveToJSON("tips/tipsters.json", tipstersActiveTips);
-  await saveToJSON("tips/missing.json", missingTips);
+  await saveToJSON("tips/missing.json", sortedMissingTips);
 
   await browser.close();
 
-  setTimeout(run, 30 * 1000);
+  setTimeout(run, 60 * 1000);
 })();
 
 async function getTipsterTips(page, tipster, isOwnTips) {
@@ -98,21 +101,30 @@ async function isActiveTipsLastPage(page) {
 
 function printTipsterTips(tipster, tipsterActiveTips, isOwnTips) {
   if (isOwnTips) {
-    console.log(`You have ${tipsterActiveTips.length} active tips.\n`);
+    console.log(
+      `You have ${tipsterActiveTips.length} active and valid tips.\n`
+    );
     return;
   }
 
   console.log(
-    `User ${tipster.username} has ${tipsterActiveTips.length} active tips.`
+    `User ${tipster.username} has ${tipsterActiveTips.length} active and valid tips.`
   );
 }
 
 function sortTipsByDate(activeTips) {
   return activeTips.sort((a, b) => {
-    return (
-      moment(a.time, "DD-MM-YYYY HH:mm").toDate() -
-      moment(b.time, "DD-MM-YYYY HH:mm").toDate()
-    );
+    const tempDateA =
+      a.time === "Live Now"
+        ? moment().toDate()
+        : moment(a.time, "DD-MM-YYYY HH:mm").toDate();
+
+    const tempDateB =
+      b.time === "Live Now"
+        ? moment().toDate()
+        : moment(b.time, "DD-MM-YYYY HH:mm").toDate();
+
+    return tempDateA - tempDateB;
   });
 }
 
@@ -124,18 +136,18 @@ async function getPageActiveTips(page, tipster) {
 
       // TODO Add only tips without block symbol
       elements.forEach((tipElement) => {
-        const isTipElementActive = tipElement.querySelector(
-          "[data-track='TipSlip,BetNow']"
+        const isInvalidTip = tipElement.querySelector(
+          "[data-original-title='Too late, this tip is no longer valid. You cannot add it to your coupon.']"
         );
 
-        if (!isTipElementActive) {
+        if (isInvalidTip) {
           return;
         }
 
         const selectors = {
           match: ".w-full:nth-of-type(2) > div:nth-of-type(1)",
           sport: ".w-full:nth-of-type(2) > div:nth-of-type(2) > a",
-          time: ".w-full:nth-of-type(2) > div:nth-of-type(2) > time",
+          time: ".w-full:nth-of-type(2) > div:nth-of-type(2) > :first-child",
           bet: ".w-full:nth-of-type(3) > p",
         };
 
@@ -160,12 +172,39 @@ async function getPageActiveTips(page, tipster) {
   );
 }
 
-function getMissingTips(ownActiveTips, tipstersActiveTips) {
-  return tipstersActiveTips.filter(
-    (tipsterTip) =>
+async function getMissingTips(ownActiveTips, tipstersTips) {
+  let uniqueTipstersTips = [];
+
+  tipstersTips.forEach((tip) => {
+    const alreadyAddedTipIndex = uniqueTipstersTips.findIndex(
+      ({ match, bet }) => match === tip.match && bet === tip.bet
+    );
+
+    // Tip não existe
+    if (alreadyAddedTipIndex === -1) {
+      uniqueTipstersTips.push({ ...tip, user: [tip.user] });
+
+      return;
+    }
+
+    // Tip já existe
+    const alreadyAddedTipsterTip = uniqueTipstersTips[
+      alreadyAddedTipIndex
+    ].user.includes(tip.user);
+
+    // User já existe na tip
+    if (alreadyAddedTipsterTip) {
+      return;
+    }
+
+    // User não existe na tip
+    uniqueTipstersTips[alreadyAddedTipIndex].user.push(tip.user);
+  });
+
+  return uniqueTipstersTips.filter(
+    (tip) =>
       !ownActiveTips.some(
-        (ownTip) =>
-          ownTip.match === tipsterTip.match && ownTip.bet === tipsterTip.bet
+        (ownTip) => ownTip.match === tip.match && ownTip.bet === tip.bet
       )
   );
 }
