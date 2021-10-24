@@ -1,0 +1,4 @@
+# Ignore tips data in this directory
+*
+# Except this file
+!.gitignore
