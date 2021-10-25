@@ -7,7 +7,7 @@ const tipsters = require("./tipsters.json");
 
 const browserOptions = {
   userDataDir: "./userDataDir",
-  headless: false,
+  headless: true,
   defaultViewport: null,
   ignoreHTTPSErrors: true,
   args: [
@@ -53,7 +53,7 @@ const baseURL = "https://www.protipster.com";
 
   await browser.close();
 
-  setTimeout(run, 60 * 1000);
+  setTimeout(run, 120 * 1000);
 })();
 
 async function getTipsterTips(page, tipster, isOwnTips) {
@@ -69,7 +69,7 @@ async function getTipsterTips(page, tipster, isOwnTips) {
 
   let tipsterActiveTips = [];
 
-  for (let nextPageNumber = 2; nextPageNumber++; ) {
+  for (let nextPageNumber = 2; ; nextPageNumber++) {
     const pageActiveTips = await getPageActiveTips(page, tipster);
     tipsterActiveTips = [...tipsterActiveTips, ...pageActiveTips];
 
