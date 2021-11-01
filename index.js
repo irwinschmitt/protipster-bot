@@ -131,11 +131,11 @@ function sortTipsByDate(activeTips) {
 async function getPageActiveTips(page, tipster) {
   return await page.$$eval(
     ".card.tip-details",
-    (elements, tipster) => {
+    async (elements, tipster) => {
       const tempPageActiveTips = [];
 
       // TODO Add only tips without block symbol
-      elements.forEach((tipElement) => {
+      elements.forEach(async (tipElement) => {
         const isInvalidTip = tipElement.querySelector(
           "[data-original-title='Too late, this tip is no longer valid. You cannot add it to your coupon.']"
         );
@@ -149,6 +149,9 @@ async function getPageActiveTips(page, tipster) {
           sport: ".w-full:nth-of-type(2) > div:nth-of-type(2) > a",
           time: ".w-full:nth-of-type(2) > div:nth-of-type(2) > :first-child",
           bet: ".w-full:nth-of-type(3) > p",
+          odd: ".w-full:nth-of-type(3) span",
+          linkProtipster: ".w-full:nth-of-type(2) > div:nth-of-type(1) > a",
+          linkBet: ".w-full:nth-of-type(4) > .tip-betting a",
         };
 
         const data = {
@@ -156,6 +159,26 @@ async function getPageActiveTips(page, tipster) {
         };
 
         for (const [key, value] of Object.entries(selectors)) {
+          if (key === "linkBet") {
+            await tipElement
+              .querySelector(
+                ".w-full:nth-of-type(4) > .tip-betting > div > div"
+              )
+              .click();
+
+            await tipElement
+              .querySelector("div > div > [data-bookie='1xBet']")
+              .click();
+
+            data["link"] = tipElement.querySelector(value).href;
+            continue;
+          }
+
+          if (key === "linkProtipster") {
+            data[key] = tipElement.querySelector(value).href;
+            continue;
+          }
+
           data[key] = tipElement.querySelector(value).innerText.trim();
         }
 
