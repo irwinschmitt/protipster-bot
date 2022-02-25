@@ -24,12 +24,12 @@ const username = "irwsch";
 (async function run() {
   const browser = await puppeteer.launch(browserOptions);
   const page = (await browser.pages())[0];
-  const ownActiveTips = await getTipsterTips(page, { username }, true);
+  const ownActiveTips = (await getTipsterTips(page, { username }, true)) || [];
 
   let tipstersActiveTips = [];
 
   for (const tipster of tipsters) {
-    const tipsterTips = await getTipsterTips(page, tipster);
+    const tipsterTips = (await getTipsterTips(page, tipster)) || [];
 
     if (Array.isArray(tipsterTips)) {
       tipstersActiveTips = [...tipstersActiveTips, ...tipsterTips];
@@ -73,6 +73,7 @@ async function getTipsterTips(page, tipster, isOwnTips) {
     await page.goto(`${tipsterTipsURL}/${nextPageNumber}`, {
       waitUntil: "load",
     });
+    await page.waitForTimeout(1000);
 
     nextPageNumber += 1;
   }
