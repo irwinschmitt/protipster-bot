@@ -3,7 +3,7 @@ const moment = require("moment");
 const fs = require("fs");
 const notifier = require("node-notifier");
 
-const tipsters = require("./tipsters.json");
+const tipsters = require("./config/tipsters.json");
 
 const browserOptions = {
   userDataDir: "./userDataDir",
@@ -19,11 +19,13 @@ const browserOptions = {
 };
 
 const baseURL = "https://www.protipster.com";
-const username = "irwsch";
+const username = process.env.PROTIPSTER_USERNAME;
 
 (async function run() {
   const browser = await puppeteer.launch(browserOptions);
+
   const page = (await browser.pages())[0];
+
   const ownActiveTips = (await getTipsterTips(page, { username }, true)) || [];
 
   let tipstersActiveTips = [];
@@ -90,16 +92,22 @@ async function isActiveTipsEmpty(page) {
 }
 
 async function isActiveTipsLastPage(page) {
-  return await page.$eval(".tipster-picks", ({ innerText }) => innerText.includes("Settled Tips"));
+  return await page.$eval(".tipster-picks", ({ innerText }) =>
+    innerText.includes("Settled Tips")
+  );
 }
 
 function printTipsterTips(tipster, tipsterActiveTips, isOwnTips) {
   if (isOwnTips) {
-    console.log(`You have ${tipsterActiveTips.length} active and valid tips.\n`);
+    console.log(
+      `You have ${tipsterActiveTips.length} active and valid tips.\n`
+    );
     return;
   }
 
-  console.log(`User ${tipster.username} has ${tipsterActiveTips.length} active and valid tips.`);
+  console.log(
+    `User ${tipster.username} has ${tipsterActiveTips.length} active and valid tips.`
+  );
 }
 
 function printSummary(tipstersActiveTips, sortedMissingTips) {
@@ -110,10 +118,14 @@ function printSummary(tipstersActiveTips, sortedMissingTips) {
 function sortTipsByDate(activeTips) {
   return activeTips.sort((a, b) => {
     const tempDateA =
-      a.time === "Live Now" ? moment().toDate() : moment(a.time, "DD-MM-YYYY HH:mm").toDate();
+      a.time === "Live Now"
+        ? moment().toDate()
+        : moment(a.time, "DD-MM-YYYY HH:mm").toDate();
 
     const tempDateB =
-      b.time === "Live Now" ? moment().toDate() : moment(b.time, "DD-MM-YYYY HH:mm").toDate();
+      b.time === "Live Now"
+        ? moment().toDate()
+        : moment(b.time, "DD-MM-YYYY HH:mm").toDate();
 
     return tempDateA - tempDateB;
   });
@@ -147,7 +159,8 @@ async function getPageActiveTips(page, tipster) {
           },
 
           time: () => {
-            const selector = ".w-full:nth-of-type(2) > div:nth-of-type(2) > :first-child";
+            const selector =
+              ".w-full:nth-of-type(2) > div:nth-of-type(2) > :first-child";
             return tipElement.querySelector(selector).innerText.trim();
           },
 
@@ -158,7 +171,9 @@ async function getPageActiveTips(page, tipster) {
 
           odd: () => {
             const selector = ".w-full:nth-of-type(3) span";
-            return parseFloat(tipElement.querySelector(selector).innerText.trim().split(" ")[1]);
+            return parseFloat(
+              tipElement.querySelector(selector).innerText.trim().split(" ")[1]
+            );
           },
 
           // stake: async () => {
@@ -176,12 +191,18 @@ async function getPageActiveTips(page, tipster) {
 
           betLink: async () => {
             await tipElement
-              .querySelector(".w-full:nth-of-type(4) > .tip-betting > div > div")
+              .querySelector(
+                ".w-full:nth-of-type(4) > .tip-betting > div > div"
+              )
               .click();
 
-            await tipElement.querySelector("div > div > [data-bookie='1xBet']").click();
+            await tipElement
+              .querySelector("div > div > [data-bookie='1xBet']")
+              .click();
 
-            return tipElement.querySelector(".w-full:nth-of-type(4) > .tip-betting a").href;
+            return tipElement.querySelector(
+              ".w-full:nth-of-type(4) > .tip-betting a"
+            ).href;
           },
         };
 
@@ -224,7 +245,9 @@ function getMissingTips(ownActiveTips, tipstersTips) {
     }
 
     // Tip já existe
-    const alreadyAddedTipsterTip = uniqueTipstersTips[alreadyAddedTipIndex].user.includes(tip.user);
+    const alreadyAddedTipsterTip = uniqueTipstersTips[
+      alreadyAddedTipIndex
+    ].user.includes(tip.user);
 
     // User já existe na tip
     if (alreadyAddedTipsterTip) {
@@ -236,7 +259,10 @@ function getMissingTips(ownActiveTips, tipstersTips) {
   });
 
   return uniqueTipstersTips.filter(
-    (tip) => !ownActiveTips.some((ownTip) => ownTip.match === tip.match && ownTip.bet === tip.bet)
+    (tip) =>
+      !ownActiveTips.some(
+        (ownTip) => ownTip.match === tip.match && ownTip.bet === tip.bet
+      )
   );
 }
 
